@@ -6,6 +6,11 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(ti_mspm0_libxr_dev LANGUAGES C CXX ASM)
 
+option(USE_HPM_TEMPLATE_LIBXR_CMAKE "Include cmake/LibXR.CMake from HPM template" OFF)
+if(USE_HPM_TEMPLATE_LIBXR_CMAKE)
+  include("${CMAKE_SOURCE_DIR}/cmake/LibXR.CMake")
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
