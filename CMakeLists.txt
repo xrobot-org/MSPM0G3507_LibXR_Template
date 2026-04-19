@@ -6,8 +6,8 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(ti_mspm0_libxr_dev LANGUAGES C CXX ASM)
 
-option(USE_HPM_TEMPLATE_LIBXR_CMAKE "Include cmake/LibXR.CMake from HPM template" OFF)
-if(USE_HPM_TEMPLATE_LIBXR_CMAKE)
+option(USE_MSPM0_TEMPLATE_LIBXR_CMAKE "Include cmake/LibXR.CMake for MSPM0 SDK integration" OFF)
+if(USE_MSPM0_TEMPLATE_LIBXR_CMAKE)
   include("${CMAKE_SOURCE_DIR}/cmake/LibXR.CMake")
 endif()
 
@@ -18,50 +18,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(MSPM0_SDK_ROOT "${CMAKE_SOURCE_DIR}/mspm0-sdk" CACHE PATH "Path to MSPM0 SDK root")
-set(SYSCFG_FILE "${CMAKE_SOURCE_DIR}/sysconfig/untitled.syscfg")
 set(SYSCFG_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/sysconfig")
-set(SYSCONFIG_CLI "" CACHE FILEPATH "Path to sysconfig_cli.bat")
-set(SYSCONFIG_PRODUCT_JSON "" CACHE FILEPATH "Path to product.json used by SysConfig")
 
-if(NOT SYSCONFIG_CLI)
-  if(DEFINED ENV{SYSCONFIG_CLI} AND EXISTS "$ENV{SYSCONFIG_CLI}")
-    set(SYSCONFIG_CLI "$ENV{SYSCONFIG_CLI}" CACHE FILEPATH "Path to sysconfig_cli.bat" FORCE)
-  elseif(EXISTS "C:/ti/sysconfig_1.26.2/sysconfig_cli.bat")
-    set(SYSCONFIG_CLI "C:/ti/sysconfig_1.26.2/sysconfig_cli.bat" CACHE FILEPATH "Path to sysconfig_cli.bat" FORCE)
-  endif()
-endif()
-
-if(NOT SYSCONFIG_PRODUCT_JSON)
-  if(DEFINED ENV{SYSCONFIG_PRODUCT_JSON} AND EXISTS "$ENV{SYSCONFIG_PRODUCT_JSON}")
-    set(SYSCONFIG_PRODUCT_JSON "$ENV{SYSCONFIG_PRODUCT_JSON}" CACHE FILEPATH "Path to product.json used by SysConfig" FORCE)
-  elseif(EXISTS "C:/ti/mspm0_sdk_2_09_00_01/.metadata/product.json")
-    set(SYSCONFIG_PRODUCT_JSON "C:/ti/mspm0_sdk_2_09_00_01/.metadata/product.json" CACHE FILEPATH "Path to product.json used by SysConfig" FORCE)
-  endif()
-endif()
-
-if(NOT EXISTS "${SYSCONFIG_CLI}")
-  message(FATAL_ERROR "SysConfig CLI not found: ${SYSCONFIG_CLI}")
-endif()
-if(NOT EXISTS "${SYSCONFIG_PRODUCT_JSON}")
-  message(FATAL_ERROR "SysConfig product metadata not found: ${SYSCONFIG_PRODUCT_JSON}")
-endif()
-
-set(SYSCFG_GENERATED_FILES
+set(SYSCFG_REQUIRED_FILES
     "${SYSCFG_OUTPUT_DIR}/device_linker.lds"
     "${SYSCFG_OUTPUT_DIR}/device.opt"
     "${SYSCFG_OUTPUT_DIR}/device.lds.genlibs"
     "${SYSCFG_OUTPUT_DIR}/ti_msp_dl_config.c"
     "${SYSCFG_OUTPUT_DIR}/ti_msp_dl_config.h")
 
-add_custom_command(
-    OUTPUT ${SYSCFG_GENERATED_FILES}
-    COMMAND "${SYSCONFIG_CLI}" --compiler gcc --product "${SYSCONFIG_PRODUCT_JSON}" --output "${SYSCFG_OUTPUT_DIR}" "${SYSCFG_FILE}"
-    DEPENDS "${SYSCFG_FILE}"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    COMMENT "Generating SysConfig output files"
-    VERBATIM)
-
-add_custom_target(syscfg_gen DEPENDS ${SYSCFG_GENERATED_FILES})
+foreach(_syscfg_file IN LISTS SYSCFG_REQUIRED_FILES)
+  if(NOT EXISTS "${_syscfg_file}")
+    message(FATAL_ERROR "Required SysConfig output file missing: ${_syscfg_file}")
+  endif()
+endforeach()
 
 set(APP_SOURCES
     "${CMAKE_SOURCE_DIR}/src/main.c"
@@ -83,7 +53,6 @@ set(APP_SOURCES
     "${SYSCFG_OUTPUT_DIR}/ti_msp_dl_config.c")
 
 add_executable(${PROJECT_NAME}.elf ${APP_SOURCES})
-add_dependencies(${PROJECT_NAME}.elf syscfg_gen)
 
 target_include_directories(${PROJECT_NAME}.elf PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
