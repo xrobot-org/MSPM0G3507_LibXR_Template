@@ -1,0 +1,33 @@
+name: CMake on a single platform
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: ghcr.io/xrobot-org/docker-image-mspm0:main
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: >
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build"
+          -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}"
+          -DCMAKE_C_COMPILER=arm-none-eabi-gcc
+          -DCMAKE_CXX_COMPILER=arm-none-eabi-g++
+          -DCMAKE_ASM_COMPILER=arm-none-eabi-gcc
+
+      - name: Build
+        run: cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}"
