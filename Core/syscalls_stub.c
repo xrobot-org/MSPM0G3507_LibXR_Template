@@ -4,27 +4,42 @@
 #include <sys/stat.h>
 
 extern char end;
-extern char __StackTop;
+extern char __StackLimit;
 
 void *_sbrk(ptrdiff_t increment)
 {
-  static char *heap_end;
-  char *previous_end;
+  static uintptr_t heap_end;
+  const uintptr_t heap_start = (uintptr_t)&end;
+  const uintptr_t heap_limit = (uintptr_t)&__StackLimit;
+  uintptr_t previous_end;
 
-  if (heap_end == 0)
+  if (heap_end == 0U)
   {
-    heap_end = &end;
+    heap_end = heap_start;
   }
-
-  if ((heap_end + increment) >= &__StackTop)
-  {
-    errno = ENOMEM;
-    return (void *)-1;
-  }
-
   previous_end = heap_end;
-  heap_end += increment;
-  return previous_end;
+
+  if (increment >= 0)
+  {
+    if (heap_end > heap_limit || (uintptr_t)increment > heap_limit - heap_end)
+    {
+      errno = ENOMEM;
+      return (void *)-1;
+    }
+    heap_end += (uintptr_t)increment;
+  }
+  else
+  {
+    /* Avoid negating PTRDIFF_MIN and reject shrinking below the heap origin. */
+    const uintptr_t decrement = (uintptr_t)(-(increment + 1)) + 1U;
+    if (decrement > heap_end - heap_start)
+    {
+      errno = ENOMEM;
+      return (void *)-1;
+    }
+    heap_end -= decrement;
+  }
+  return (void *)previous_end;
 }
 
 int _fstat(int file, struct stat *status)
