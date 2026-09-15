@@ -62,7 +62,10 @@ target_link_options(${PROJECT_NAME}.elf PRIVATE
     -Wl,--gc-sections
     -Wl,--no-warn-rwx-segment
     "-Wl,-Map=${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
-    "-T${SYSCFG_LINKER_FILE}")
+    "-T${SYSCFG_LINKER_FILE}"
+    "-T${CMAKE_SOURCE_DIR}/Core/stack_reservation.ld")
+set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_SOURCE_DIR}/Core/stack_reservation.ld")
 
 find_program(CMAKE_OBJCOPY arm-none-eabi-objcopy REQUIRED)
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
