@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/xrobot-org/docker-image-mspm0:main
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release]
+    steps:
+      # The MSPM0 SDK submodule is about 2.2 GB; scripts/fetch-mspm0-sdk.sh fetches only
+      # the pinned commit's files that the build needs.
+      - uses: actions/checkout@v4
+
+      - name: Fetch LibXR and the MSPM0 SDK
+        run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init libxr
+          sh scripts/fetch-mspm0-sdk.sh
+          git submodule status
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Firmware size
+        run: arm-none-eabi-size build/${{ matrix.preset }}/ti_mspm0_libxr_dev.elf
+
+  # Compatibility canary: builds against the head of the LibXR master branch.
+  # A failure here is reported but does not fail the workflow.
+  libxr-master:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container:
+      image: ghcr.io/xrobot-org/docker-image-mspm0:main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the MSPM0 SDK and update LibXR to master
+        run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init libxr
+          sh scripts/fetch-mspm0-sdk.sh
+          git -C libxr fetch --depth 1 origin master
+          git -C libxr checkout --detach FETCH_HEAD
+          git -C libxr log -1 --format='LibXR master: %H %s'
+
+      - name: Configure
+        run: cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Firmware size
+        run: arm-none-eabi-size build/release/ti_mspm0_libxr_dev.elf
