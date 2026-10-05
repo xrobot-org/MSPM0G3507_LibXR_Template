@@ -12,7 +12,34 @@ on:
 permissions:
   contents: read
 
+env:
+  # The image has Arm GCC but neither the MSPM0 SDK nor SysConfig; the build fetches both.
+  MSPM0_SDK_TAG: mspm0_sdk_2_11_00_07
+  SYSCONFIG_INSTALLER: sysconfig-1.28.1_4785-setup.run
+
 jobs:
+  # Configuration check: formatting of the XRobot YAML files and a locked module resolution.
+  check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/xrobot-org/docker-image-mspm0:main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install XRobot
+        run: |
+          git config --global --add safe.directory '*'
+          pip install "xrobot==$(sed -n 's/^xrobot: *//p' Modules/modules.yaml)"
+
+      - name: Check the configuration format
+        run: xrobot format --check
+
+      - name: Resolve the modules from xrobot.lock
+        run: xrobot setup --frozen
+
   build:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -23,16 +50,54 @@ jobs:
       matrix:
         preset: [debug, release]
     steps:
-      # The MSPM0 SDK submodule is about 2.2 GB; scripts/fetch-mspm0-sdk.sh fetches only
-      # the pinned commit's files that the build needs.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Fetch LibXR and the MSPM0 SDK
+      # The build needs source/ (driverlib, device headers, startup files, the SysConfig
+      # metadata) and .metadata/ of the SDK, about 250 MB of the 2.3 GB tag.
+      - name: Cache the MSPM0 SDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: .mspm0-sdk
+          key: mspm0-sdk-${{ env.MSPM0_SDK_TAG }}-source
+
+      - name: Fetch the MSPM0 SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
+          git clone --depth 1 --branch "$MSPM0_SDK_TAG" --filter=blob:none --sparse \
+            https://github.com/TexasInstruments/mspm0-sdk .mspm0-sdk
+          git -C .mspm0-sdk sparse-checkout set --no-cone /source/ /.metadata/
+
+      - name: Cache SysConfig
+        id: sysconfig-cache
+        uses: actions/cache@v4
+        with:
+          path: .sysconfig
+          key: sysconfig-${{ env.SYSCONFIG_INSTALLER }}
+
+      - name: Install SysConfig
+        if: steps.sysconfig-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fL --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/sysconfig-setup.run" \
+            "https://downloads.ti.com/ccs/esd/sysconfig/$SYSCONFIG_INSTALLER"
+          chmod +x "$RUNNER_TEMP/sysconfig-setup.run"
+          "$RUNNER_TEMP/sysconfig-setup.run" --mode unattended \
+            --prefix "$GITHUB_WORKSPACE/.sysconfig"
+          rm "$RUNNER_TEMP/sysconfig-setup.run"
+
+      - name: Select the SDK and SysConfig
+        run: |
+          echo "MSPM0_SDK_INSTALL_DIR=$GITHUB_WORKSPACE/.mspm0-sdk" >> "$GITHUB_ENV"
+          echo "SYSCONFIG_TOOL=$GITHUB_WORKSPACE/.sysconfig/sysconfig_cli.sh" >> "$GITHUB_ENV"
           git config --global --add safe.directory '*'
-          git submodule update --init libxr
-          sh scripts/fetch-mspm0-sdk.sh
           git submodule status
+
+      - name: Resolve the XRobot modules
+        run: |
+          pip install "xrobot==$(sed -n 's/^xrobot: *//p' Modules/modules.yaml)"
+          xrobot setup --frozen
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
@@ -41,7 +106,7 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Firmware size
-        run: arm-none-eabi-size build/${{ matrix.preset }}/ti_mspm0_libxr_dev.elf
+        run: arm-none-eabi-size build/${{ matrix.preset }}/mspm0_minidb48.elf
 
   # Compatibility canary: builds against the head of the LibXR master branch.
   # A failure here is reported but does not fail the workflow.
@@ -53,15 +118,53 @@ jobs:
       image: ghcr.io/xrobot-org/docker-image-mspm0:main
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Fetch the MSPM0 SDK and update LibXR to master
+      - name: Cache the MSPM0 SDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: .mspm0-sdk
+          key: mspm0-sdk-${{ env.MSPM0_SDK_TAG }}-source
+
+      - name: Fetch the MSPM0 SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
+          git clone --depth 1 --branch "$MSPM0_SDK_TAG" --filter=blob:none --sparse \
+            https://github.com/TexasInstruments/mspm0-sdk .mspm0-sdk
+          git -C .mspm0-sdk sparse-checkout set --no-cone /source/ /.metadata/
+
+      - name: Cache SysConfig
+        id: sysconfig-cache
+        uses: actions/cache@v4
+        with:
+          path: .sysconfig
+          key: sysconfig-${{ env.SYSCONFIG_INSTALLER }}
+
+      - name: Install SysConfig
+        if: steps.sysconfig-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fL --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/sysconfig-setup.run" \
+            "https://downloads.ti.com/ccs/esd/sysconfig/$SYSCONFIG_INSTALLER"
+          chmod +x "$RUNNER_TEMP/sysconfig-setup.run"
+          "$RUNNER_TEMP/sysconfig-setup.run" --mode unattended \
+            --prefix "$GITHUB_WORKSPACE/.sysconfig"
+          rm "$RUNNER_TEMP/sysconfig-setup.run"
+
+      - name: Update LibXR to master
+        run: |
+          echo "MSPM0_SDK_INSTALL_DIR=$GITHUB_WORKSPACE/.mspm0-sdk" >> "$GITHUB_ENV"
+          echo "SYSCONFIG_TOOL=$GITHUB_WORKSPACE/.sysconfig/sysconfig_cli.sh" >> "$GITHUB_ENV"
           git config --global --add safe.directory '*'
-          git submodule update --init libxr
-          sh scripts/fetch-mspm0-sdk.sh
           git -C libxr fetch --depth 1 origin master
           git -C libxr checkout --detach FETCH_HEAD
           git -C libxr log -1 --format='LibXR master: %H %s'
+
+      - name: Resolve the XRobot modules
+        run: |
+          pip install "xrobot==$(sed -n 's/^xrobot: *//p' Modules/modules.yaml)"
+          xrobot setup --frozen
 
       - name: Configure
         run: cmake --preset release
@@ -70,4 +173,4 @@ jobs:
         run: cmake --build --preset release
 
       - name: Firmware size
-        run: arm-none-eabi-size build/release/ti_mspm0_libxr_dev.elf
+        run: arm-none-eabi-size build/release/mspm0_minidb48.elf

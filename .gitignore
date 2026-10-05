@@ -15,3 +15,10 @@
 *.out
 /helloagents/
 /.cache/
+/User/xrobot_main.hpp
+/Modules/CMakeLists.txt
+/Modules/*/
+
+# MSPM0 SDK and SysConfig installed by CI
+/.mspm0-sdk/
+/.sysconfig/
