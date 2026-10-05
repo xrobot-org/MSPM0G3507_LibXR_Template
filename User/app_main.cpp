@@ -44,15 +44,12 @@ static constexpr uint32_t BUSCLK_FREQ = UART_0_INST_FREQUENCY;
 #define DMA_CH_UART0_TX_LIBXR_UART_TX 1
 #define DMA_CH_UART1_TX_LIBXR_UART_IRQN UART_1_INST_INT_IRQN
 #define DMA_CH_UART1_TX_LIBXR_UART_TX 1
-#define DMA_CH_UART2_TX_LIBXR_UART_IRQN UART_2_INST_INT_IRQN
-#define DMA_CH_UART2_TX_LIBXR_UART_TX 1
 
 // DMA buffers. A UART gets 2 x N bytes for its two transmit halves; the receive side
 // (byte interrupts) has no DMA buffer. SPI DMA buffers are split in two halves as well.
 // The I2C driver uses polling, its buffer is the staging area for DMA transfers.
 alignas(size_t) static uint8_t uart0_tx_buf[2 * 128];
 alignas(size_t) static uint8_t uart1_tx_buf[2 * 64];
-alignas(size_t) static uint8_t uart2_tx_buf[2 * 64];
 alignas(4) static uint8_t spi1_rx_buf[64];
 alignas(4) static uint8_t spi1_tx_buf[64];
 alignas(4) static uint8_t i2c0_buf[32];
@@ -84,13 +81,11 @@ extern "C" void app_main(void)
   KEY2.RegisterCallback(GPIO::Callback::Create(OnKeyInterrupt, &key2_irq_count));
   KEY2.EnableInterrupt();
 
-  // UART: UART0 (CH340 through the jumpers), UART1 and UART2; TX with DMA
+  // UART: UART0 (CH340 through the jumpers) and UART1; TX with DMA
   static MSPM0UART uart0(MSPM0_UART_MAIN_INIT(UART_0, DMA_CH_UART0_TX, uart0_tx_buf,
                                               sizeof(uart0_tx_buf), 5, 128));
   static MSPM0UART uart1(MSPM0_UART_MAIN_INIT(UART_1, DMA_CH_UART1_TX, uart1_tx_buf,
                                               sizeof(uart1_tx_buf), 5, 64));
-  static MSPM0UART uart2(MSPM0_UART_MAIN_INIT(UART_2, DMA_CH_UART2_TX, uart2_tx_buf,
-                                              sizeof(uart2_tx_buf), 5, 64));
 
   // I2C: polling
   static MSPM0I2C i2c0({I2C_0_INST, I2C_0_INST_INT_IRQN, BUSCLK_FREQ, I2C_0_BUS_SPEED_HZ,
@@ -136,7 +131,6 @@ extern "C" void app_main(void)
 
   XR_REGISTER(uart0, LibXR::UART);
   XR_REGISTER(uart1, LibXR::UART);
-  XR_REGISTER(uart2, LibXR::UART);
 
   XR_REGISTER(i2c0, LibXR::I2C);
   XR_REGISTER(i2c1, LibXR::I2C);

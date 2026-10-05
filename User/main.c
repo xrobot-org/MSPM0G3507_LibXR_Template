@@ -15,7 +15,6 @@ int main(void)
   NVIC_SetPriority(SysTick_IRQn, 0U);
   NVIC_SetPriority(UART_0_INST_INT_IRQN, 1U);
   NVIC_SetPriority(UART_1_INST_INT_IRQN, 1U);
-  NVIC_SetPriority(UART_2_INST_INT_IRQN, 1U);
   NVIC_SetPriority(SPI_1_INST_INT_IRQN, 1U);
   NVIC_SetPriority(GPIO_KEYS_INT_IRQN, 1U);
 

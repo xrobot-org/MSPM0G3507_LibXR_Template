@@ -40,3 +40,7 @@ set_source_files_properties("${LIBXR_DIR}/driver/mspm0/mspm0_gpio.cpp"
   TARGET_DIRECTORY xr PROPERTIES COMPILE_OPTIONS -Wno-array-bounds)
 set_source_files_properties("${LIBXR_DIR}/driver/mspm0/mspm0_timebase.cpp"
   TARGET_DIRECTORY xr PROPERTIES COMPILE_OPTIONS -Wno-volatile)
+# system/none/thread.cpp:8: Thread::Current() returns a Thread whose handle is never set;
+# GCC reports it at -Og.
+set_source_files_properties("${LIBXR_DIR}/system/none/thread.cpp"
+  TARGET_DIRECTORY xr PROPERTIES COMPILE_OPTIONS -Wno-uninitialized)

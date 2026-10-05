@@ -44,7 +44,8 @@ mspm0_sysconfig("${MSPM0_SYSCFG_FILE}")
 # CFLAGS of the makefile: -I<syscfg dir> @device.opt -O2 -I<sdk>/source/third_party/CMSIS/Core/Include
 # -I<sdk>/source (here -isystem) -mcpu=cortex-m0plus -march=armv6-m -mthumb -std=c99 -mfloat-abi=soft
 # -ffunction-sections -fdata-sections -g -Wall, and -gstrict-dwarf unless CONFIG=RELEASE.
-# C++ gets the same options and -std=gnu++20 from CMAKE_CXX_STANDARD.
+# C++ gets the same options and -std=gnu++20 from CMAKE_CXX_STANDARD. Debug builds use -Og
+# instead of the makefile's -O2 so that code can be stepped through.
 add_library(mspm0_sdk INTERFACE)
 target_include_directories(mspm0_sdk INTERFACE "${MSPM0_SYSCFG_OUTPUT_DIR}")
 # The SDK headers are C code that the C++20 warnings of -Wall flag (deprecated volatile and enum
@@ -54,7 +55,7 @@ target_include_directories(mspm0_sdk SYSTEM INTERFACE
   "${MSPM0_SDK_INSTALL_DIR}/source")
 target_compile_options(mspm0_sdk INTERFACE
   "@${MSPM0_SYSCFG_OPTIONS}"
-  -O2
+  $<IF:$<CONFIG:Debug>,-Og,-O2>
   -mcpu=cortex-m0plus
   -march=armv6-m
   -mthumb
