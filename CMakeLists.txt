@@ -1,77 +1,122 @@
+# XRobot BSP for the TI MSPM0 MINI-D.B.48 board.
+#
+# TI ships no CMake flow; the SDK examples build with CCS projects or with one makefile per
+# compiler. This file does what the gcc makefile of the SDK examples does (for example
+# examples/nortos/LP_MSPM0G3507/driverlib/empty/gcc/makefile):
+#
+#   - SysConfig runs on the project's .syscfg and generates ti_msp_dl_config.c/.h, device.opt,
+#     the linker script and device.lds.genlibs (cmake/MSPM0SysConfig.cmake)
+#   - the generated sources and the startup file named by SysConfig are compiled with the
+#     options of the makefile and the options file device.opt
+#   - the link uses the generated linker script and device.lds.genlibs
+#
+# Everything that depends on the device (MSPM0G3507, MSPM0G3519, ...) comes from SysConfig,
+# so another device needs another .syscfg only.
+#
+# Inputs, in the cache or in the environment (the names of the SDK imports.mak):
+#   MSPM0_SDK_INSTALL_DIR  MSPM0 SDK root
+#   SYSCONFIG_TOOL         sysconfig_cli.sh / sysconfig_cli.bat
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR arm)
-set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+project(mspm0_minidb48 LANGUAGES C CXX)
 
-project(ti_mspm0_libxr_dev LANGUAGES C CXX ASM)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type: Debug or Release" FORCE)
+endif()
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-include("${CMAKE_SOURCE_DIR}/cmake/LibXR.CMake")
+# ---- SysConfig ----------------------------------------------------------------------------
+include(cmake/MSPM0SysConfig.cmake)
 
-set(APP_SOURCES
-    "${CMAKE_SOURCE_DIR}/User/main.c"
-    "${CMAKE_SOURCE_DIR}/User/app_main.cpp"
-    "${CMAKE_SOURCE_DIR}/Core/syscalls_stub.c"
-    "${MSPM0_STARTUP_FILE}"
-    "${SYSCFG_C_FILE}")
+file(GLOB _syscfg_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/*.syscfg")
+set(MSPM0_SYSCFG_FILE "${_syscfg_files}" CACHE FILEPATH "The SysConfig file of the board")
+list(LENGTH MSPM0_SYSCFG_FILE _syscfg_count)
+if(NOT _syscfg_count EQUAL 1)
+  message(FATAL_ERROR "Expected one .syscfg file in ${CMAKE_SOURCE_DIR}, or set MSPM0_SYSCFG_FILE")
+endif()
+mspm0_sysconfig("${MSPM0_SYSCFG_FILE}")
 
-add_executable(${PROJECT_NAME}.elf ${APP_SOURCES})
+# ---- Options of the SDK example makefile ------------------------------------------------
+# CFLAGS of the makefile: -I<syscfg dir> @device.opt -O2 -I<sdk>/source/third_party/CMSIS/Core/Include
+# -I<sdk>/source (here -isystem) -mcpu=cortex-m0plus -march=armv6-m -mthumb -std=c99 -mfloat-abi=soft
+# -ffunction-sections -fdata-sections -g -Wall, and -gstrict-dwarf unless CONFIG=RELEASE.
+# C++ gets the same options and -std=gnu++20 from CMAKE_CXX_STANDARD.
+add_library(mspm0_sdk INTERFACE)
+target_include_directories(mspm0_sdk INTERFACE "${MSPM0_SYSCFG_OUTPUT_DIR}")
+# The SDK headers are C code that the C++20 warnings of -Wall flag (deprecated volatile and enum
+# arithmetic in dl_opa.h, dl_adc12.h), so the directories are system directories (-isystem).
+target_include_directories(mspm0_sdk SYSTEM INTERFACE
+  "${MSPM0_SDK_INSTALL_DIR}/source/third_party/CMSIS/Core/Include"
+  "${MSPM0_SDK_INSTALL_DIR}/source")
+target_compile_options(mspm0_sdk INTERFACE
+  "@${MSPM0_SYSCFG_OPTIONS}"
+  -O2
+  -mcpu=cortex-m0plus
+  -march=armv6-m
+  -mthumb
+  -mfloat-abi=soft
+  -ffunction-sections
+  -fdata-sections
+  -g
+  $<$<CONFIG:Debug>:-gstrict-dwarf>
+  -Wall
+  $<$<COMPILE_LANGUAGE:C>:-std=c99>
+  # No C++ runtime features that cost size and need an operating system.
+  $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+  $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+  $<$<COMPILE_LANGUAGE:CXX>:-fno-threadsafe-statics>)
+# driverlib comes from device.lds.genlibs. The linker script names it, and the archive has to
+# follow the objects that use it, so link it explicitly as well, as the makefile does with
+# -l:driverlib.a.
+target_link_libraries(mspm0_sdk INTERFACE ${MSPM0_SYSCFG_LIBRARIES})
 
-target_include_directories(${PROJECT_NAME}.elf PRIVATE
-    "${CMAKE_SOURCE_DIR}/User"
-    ${MSPM0_COMMON_INCLUDE_DIRS})
+# The device startup file and the SysConfig output: SDK code, built with the makefile's
+# warning level.
+add_library(mspm0_device OBJECT "${MSPM0_STARTUP_FILE}" ${MSPM0_SYSCFG_SOURCES})
+target_link_libraries(mspm0_device PUBLIC mspm0_sdk)
 
-target_compile_definitions(${PROJECT_NAME}.elf PRIVATE
-    LIBXR_NOT_SUPPORT_MUTI_THREAD=1
-    LIBXR_NO_EIGEN
-    LIBXR_DEFAULT_SCALAR=double
-    LIBXR_PRINTF_BUFFER_SIZE=128
-    LIBXR_LOG_LEVEL=4
-    LIBXR_LOG_OUTPUT_LEVEL=4
-    XR_LOG_MESSAGE_MAX_LEN=64
-    ${MSPM0_COMMON_COMPILE_DEFINITIONS})
+# ---- Application --------------------------------------------------------------------------
+add_executable(${PROJECT_NAME} User/main.c User/app_main.cpp Core/syscalls.c)
+target_include_directories(${PROJECT_NAME} PRIVATE User)
+target_link_libraries(${PROJECT_NAME} PRIVATE mspm0_device)
+target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
 
-target_compile_options(${PROJECT_NAME}.elf PRIVATE
-    ${MSPM0_ARCH_COMPILE_OPTIONS}
-    -ffunction-sections
-    -fdata-sections
-    -Og
-    -g
-    "@${SYSCFG_OUTPUT_DIR}/device.opt"
-    $<$<COMPILE_LANGUAGE:C>:-std=gnu11>
-    $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++20>
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
-    $<$<COMPILE_LANGUAGE:CXX>:-fpermissive>)
+# LFLAGS of the makefile: -nostartfiles -Tdevice.lds.genlibs -Wl,-T,device_linker.lds
+# -Wl,-Map,<name>.map -L<sdk>/source -march=armv6-m -mthumb -static -Wl,--gc-sections
+# --specs=nano.specs --specs=nosys.specs, with the libraries -lgcc -lc -lm (the compiler driver
+# links them). -Wl,--no-warn-rwx-segment: the SRAM region of the SysConfig linker script is
+# RWX, which binutils 2.39 and later warn about.
+target_link_options(${PROJECT_NAME} PRIVATE
+  -mcpu=cortex-m0plus
+  -march=armv6-m
+  -mthumb
+  -mfloat-abi=soft
+  -nostartfiles
+  "-T${MSPM0_SYSCFG_GENLIBS}"
+  "-Wl,-T,${MSPM0_SYSCFG_LINKER}"
+  "-Wl,-Map,${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
+  "-L${MSPM0_SDK_INSTALL_DIR}/source"
+  -static
+  -Wl,--gc-sections
+  -Wl,--no-warn-rwx-segment
+  --specs=nano.specs
+  --specs=nosys.specs)
+set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
+  "${MSPM0_SYSCFG_LINKER}" "${MSPM0_SYSCFG_GENLIBS}")
 
-target_link_libraries(${PROJECT_NAME}.elf PRIVATE xr)
-target_link_options(${PROJECT_NAME}.elf PRIVATE
-    -mcpu=cortex-m0plus
-    -mthumb
-    -mfloat-abi=soft
-    --specs=nano.specs
-    --specs=nosys.specs
-    -Wl,-e,Reset_Handler
-    -Wl,--gc-sections
-    -Wl,--no-warn-rwx-segment
-    "-Wl,-Map=${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
-    "-T${SYSCFG_LINKER_FILE}"
-    "-T${CMAKE_SOURCE_DIR}/Core/stack_reservation.ld")
-set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_SOURCE_DIR}/Core/stack_reservation.ld")
+# ---- LibXR and the XRobot modules ---------------------------------------------------------
+include(cmake/LibXR.CMake)
 
-find_program(CMAKE_OBJCOPY arm-none-eabi-objcopy REQUIRED)
-add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O ihex
-        $<TARGET_FILE:${PROJECT_NAME}.elf>
-        ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.hex
-    COMMAND ${CMAKE_OBJCOPY} -O binary
-        $<TARGET_FILE:${PROJECT_NAME}.elf>
-        ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bin)
+# ---- Firmware images ----------------------------------------------------------------------
+# Each link also writes <project>.hex and <project>.bin next to the ELF.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:${PROJECT_NAME}>
+  COMMAND ${CMAKE_OBJCOPY} --output-target ihex
+    $<TARGET_FILE_NAME:${PROJECT_NAME}> ${PROJECT_NAME}.hex
+  COMMAND ${CMAKE_OBJCOPY} --output-target binary
+    $<TARGET_FILE_NAME:${PROJECT_NAME}> ${PROJECT_NAME}.bin
+  VERBATIM)

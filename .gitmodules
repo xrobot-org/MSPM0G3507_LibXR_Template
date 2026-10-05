@@ -1,8 +1,3 @@
 [submodule "libxr"]
 	path = libxr
 	url = https://github.com/xrobot-org/libxr.git
-	branch = master
-[submodule "mspm0-sdk"]
-	path = mspm0-sdk
-	url = https://github.com/TexasInstruments/mspm0-sdk
-	ignore = dirty
